@@ -12,7 +12,7 @@ if os.environ.get("ROS_VERSION") == "1":
     import rospy # ROS1
 elif os.environ.get("ROS_VERSION") == "2":
     import rosboard.rospy2 as rospy # ROS2
-    from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
+    from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, HistoryPolicy
 else:
     print("ROS not detected. Please source your ROS environment\n(e.g. 'source /opt/ros/DISTRO/setup.bash')")
     exit(1)
@@ -65,7 +65,7 @@ class ROSBoardNode(object):
             self.sub_rosout = rospy.Subscriber("/rosout", Log, lambda x:x)
 
         tornado_settings = {
-            'debug': True, 
+            'debug': True,
             'static_path': os.path.join(os.path.dirname(os.path.realpath(__file__)), 'html')
         }
 
@@ -112,7 +112,7 @@ class ROSBoardNode(object):
         or
             "std_msgs/msg/Int32"
         it imports the message class into Python and returns the class, i.e. the actual std_msgs.msg.Int32
-        
+
         Returns none if the type is invalid (e.g. if user hasn't bash-sourced the message package).
         """
         try:
@@ -130,15 +130,17 @@ class ROSBoardNode(object):
             return None
 
     def get_topic_qos(self, topic_name: str) -> QoSProfile:
-        """! 
+        """!
         Given a topic name, get the QoS profile with which it is being published
         @param topic_name (str) the topic name
-        @return QosProfile the qos profile with which the topic is published. If no publishers exist 
+        @return QosProfile the qos profile with which the topic is published. If no publishers exist
         for the given topic, it returns the sensor data QoS. returns None in case ROS1 is being used
         """
         if rospy.__name__ == "rospy2":
             topic_info = rospy._node.get_publishers_info_by_topic(topic_name=topic_name)
             if len(topic_info):
+                if(topic_info[0].qos_profile.history == HistoryPolicy.UNKNOWN):
+                    topic_info[0].qos_profile.history = HistoryPolicy.KEEP_LAST
                 return topic_info[0].qos_profile
             else:
                 rospy.logwarn(f"No publishers available for topic {topic_name}. Returning sensor data QoS")
@@ -154,7 +156,7 @@ class ROSBoardNode(object):
             return None
 
     def create_publisher_if_not_exists(self, topic_name:str, topic_type:str) -> None:
-        """! 
+        """!
         Function to create a ros publisher if it does not exist
         @param topic_name (str) the topic name
         @param topic_type (_type_) the topic type string, i.e: sensor_msgs/msg/CameraInfo
@@ -164,7 +166,7 @@ class ROSBoardNode(object):
         self.local_pubs[topic_name] = rospy.Publisher(topic_name, self.get_msg_class(topic_type))
 
     def publish_remote_message(self,rosboard_data: list) ->None:
-        """! 
+        """!
         Function to publish a ros message from a rosboard data dictionary
         @param rosboard_data (dict) the rosboard data dict
         """
@@ -302,7 +304,7 @@ class ROSBoardNode(object):
         except Exception as e:
             rospy.logwarn(str(e))
             traceback.print_exc()
-        
+
         self.lock.release()
 
     def on_system_stats(self, system_stats):
@@ -389,7 +391,7 @@ class ROSBoardNode(object):
         # log last time we received data on this topic
         self.last_data_times_by_topic[topic_name] = t
 
-        # broadcast it to the listeners that care    
+        # broadcast it to the listeners that care
         self.event_loop.add_callback(
             ROSBoardSocketHandler.broadcast,
             [ROSBoardSocketHandler.MSG_MSG, ros_msg_dict]
@@ -400,4 +402,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
